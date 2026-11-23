@@ -1,0 +1,13 @@
+{
+  "precision": 0.795,
+  "recall": 0.715,
+  "f1": 0.753,
+  "fraud_rate": 0.0434,
+  "test_samples": 6000,
+  "confusion": {
+    "tn": 5692,
+    "fp": 48,
+    "fn": 74,
+    "tp": 186
+  }
+}
