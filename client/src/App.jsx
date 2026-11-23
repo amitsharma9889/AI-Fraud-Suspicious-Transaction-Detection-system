@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 
+// Backend URL. Set VITE_API_URL on Vercel (no trailing slash). Empty = use the local Vite proxy.
+const API = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+
 const EMPTY = {
   amount: "",
   avg_amount_30d: "",
@@ -24,6 +27,16 @@ const VERDICT = {
 };
 
 const money = (n) => "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+// Read a response as JSON, with a clear error if the server sent something else (e.g. an HTML 404 page).
+async function readJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("The server did not return JSON. Check that VITE_API_URL points to your Express API.");
+  }
+}
 
 function RiskMeter({ score }) {
   const pct = Math.round(score * 100);
@@ -56,11 +69,11 @@ export default function App() {
   const refresh = async () => {
     try {
       const [h, s] = await Promise.all([
-        fetch("/api/transactions").then((r) => r.json()),
-        fetch("/api/stats").then((r) => r.json()),
+        fetch(`${API}/api/transactions`).then(readJson),
+        fetch(`${API}/api/stats`).then(readJson),
       ]);
-      setHistory(h);
-      setStats(s);
+      if (Array.isArray(h)) setHistory(h);
+      if (s && typeof s.total === "number") setStats(s);
     } catch {
       /* server offline - shown on submit */
     }
@@ -68,7 +81,10 @@ export default function App() {
 
   useEffect(() => {
     refresh();
-    fetch("/api/model").then((r) => r.ok && r.json()).then((m) => m && setModel(m)).catch(() => {});
+    fetch(`${API}/api/model`)
+      .then((r) => r.ok && readJson(r))
+      .then((m) => m && setModel(m))
+      .catch(() => {});
   }, []);
 
   const set = (k) => (e) =>
@@ -79,17 +95,31 @@ export default function App() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/transactions", {
+      // Number inputs give strings, so convert before sending.
+      const body = {
+        amount: Number(form.amount),
+        avg_amount_30d: Number(form.avg_amount_30d),
+        hour: Number(form.hour),
+        txns_last_hour: Number(form.txns_last_hour),
+        account_age_days: Number(form.account_age_days),
+        is_international: Boolean(form.is_international),
+        is_new_device: Boolean(form.is_new_device),
+      };
+      const res = await fetch(`${API}/api/transactions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Something went wrong");
       setResult(data);
       refresh();
     } catch (err) {
-      setError(err.message === "Failed to fetch" ? "Can't reach the server. Start it on port 5000." : err.message);
+      setError(
+        err.message === "Failed to fetch"
+          ? "Can't reach the server. If it is on Render's free plan, wait a minute for it to wake up and try again."
+          : err.message
+      );
     } finally {
       setLoading(false);
     }
